@@ -1,0 +1,1 @@
+"""SafeCityAI API package."""

@@ -1,0 +1,49 @@
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environments
+.venv/
+venv/
+ENV/
+env/
+
+# PyTorch Model Weights
+*.pt
+!model/best.pt
+!model/README.md
+
+# Training Runs & Dataset Cache
+runs/
+yolov5/
+dataset/images/
+dataset/labels/
+dataset/roboflow_dataset/
+!dataset/README.md
+!dataset/data.yaml
+
+# Output Files
+outputs/*
+!outputs/.gitkeep
+
+# Samples
+samples/images/*
+samples/videos/*
+!samples/images/.gitkeep
+!samples/videos/.gitkeep
+
+# Jupyter Notebook Checkpoints
+.ipynb_checkpoints/
+
+# IDE / OS settings
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Pytest / Coverage
+.pytest_cache/
+.coverage
+htmlcov/

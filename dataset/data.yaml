@@ -1,0 +1,11 @@
+path: dataset/roboflow_dataset
+train: train/images
+val: valid/images
+test: test/images
+
+nc: 3
+
+names:
+  0: Helmet
+  1: LicensePlate
+  2: NoHelmet
