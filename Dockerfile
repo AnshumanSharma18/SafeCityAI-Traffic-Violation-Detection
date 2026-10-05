@@ -7,8 +7,9 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Install system dependencies required for OpenCV headless & graphics libraries
+# Install system dependencies required for OpenCV & graphics libraries
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
@@ -23,8 +24,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application source code and directories
 COPY . .
 
-# Expose FastAPI port
-EXPOSE 8000
+# Expose default port
+EXPOSE 10000
 
-# Start FastAPI server using Uvicorn
-CMD ["uvicorn", "api.server:app", "--host", "0.0.0.0", "--port", "8000"]
+# Start Streamlit web application using Render's PORT environment variable
+CMD ["sh", "-c", "streamlit run app.py --server.port=${PORT:-10000} --server.address=0.0.0.0"]
+
