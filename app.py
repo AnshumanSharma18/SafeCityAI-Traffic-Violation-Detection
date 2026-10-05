@@ -47,19 +47,15 @@ def load_yolo_model():
     """Load PyTorch YOLOv5 model weights with resource caching."""
     if not WEIGHTS_PATH.is_file():
         return None
-    try:
-        model = torch.hub.load(
-            'ultralytics/yolov5',
-            'custom',
-            path=str(WEIGHTS_PATH),
-            trust_repo=True,
-            force_reload=False
-        )
-        model.eval()
-        return model
-    except Exception as e:
-        st.error(f"Error loading model weights: {e}")
-        return None
+    model = torch.hub.load(
+        'ultralytics/yolov5',
+        'custom',
+        path=str(WEIGHTS_PATH),
+        trust_repo=True,
+        force_reload=False
+    )
+    model.eval()
+    return model
 
 
 def main():
@@ -101,10 +97,30 @@ def main():
     )
 
     if uploaded_file is not None:
-        # Load uploaded image bytes
-        image_bytes = uploaded_file.read()
-        pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        file_id = f"{uploaded_file.name}_{uploaded_file.size}"
 
+        # If file changed or not loaded yet in session state
+        if st.session_state.get("uploaded_file_id") != file_id:
+            try:
+                image_bytes = uploaded_file.getvalue()
+                pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+                st.session_state["uploaded_file_id"] = file_id
+                st.session_state["pil_image"] = pil_image
+                st.session_state["annotated_image"] = None
+                st.session_state["last_detections"] = None
+            except Exception as e:
+                st.error(f"Error opening uploaded image: {e}")
+                return
+    else:
+        # File uploader cleared by user
+        st.session_state.pop("uploaded_file_id", None)
+        st.session_state.pop("pil_image", None)
+        st.session_state.pop("annotated_image", None)
+        st.session_state.pop("last_detections", None)
+
+    # Render image & controls if PIL image exists in session state
+    if "pil_image" in st.session_state and st.session_state["pil_image"] is not None:
+        pil_image = st.session_state["pil_image"]
         col1, col2 = st.columns(2)
 
         with col1:
@@ -116,74 +132,79 @@ def main():
             run_btn = st.button("🚀 Run Detection", type="primary", use_container_width=True)
 
             if run_btn:
-                model = load_yolo_model()
+                try:
+                    with st.spinner("Running YOLOv5 traffic detection..."):
+                        model = load_yolo_model()
+                        if model is None:
+                            st.error("Model weights `model/best.pt` missing or failed to load.")
+                        else:
+                            model.conf = conf_threshold
 
-                if model is None:
-                    st.error("Model weights `model/best.pt` missing or unavailable.")
-                    return
+                            img_np = np.array(pil_image)
+                            img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
 
-                model.conf = conf_threshold
+                            results = model(img_bgr)
+                            predictions = results.xyxy[0].cpu().numpy()
 
-                with st.spinner("Running YOLOv5 traffic detection..."):
-                    img_np = np.array(pil_image)
-                    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+                            annotated_bgr = img_bgr.copy()
+                            detections = []
 
-                    results = model(img_bgr)
-                    predictions = results.xyxy[0].cpu().numpy()
+                            for pred in predictions:
+                                xmin, ymin, xmax, ymax, conf, cls_id = pred
+                                xmin, ymin, xmax, ymax = int(xmin), int(ymin), int(xmax), int(ymax)
+                                cls_id = int(cls_id)
+                                conf = float(conf)
 
-                    annotated_bgr = img_bgr.copy()
-                    detections = []
+                                cls_name = CLASS_NAMES.get(cls_id, f"Class_{cls_id}")
+                                color = CLASS_COLORS.get(cls_id, (255, 255, 255))
 
-                    for pred in predictions:
-                        xmin, ymin, xmax, ymax, conf, cls_id = pred
-                        xmin, ymin, xmax, ymax = int(xmin), int(ymin), int(xmax), int(ymax)
-                        cls_id = int(cls_id)
-                        conf = float(conf)
+                                detections.append({
+                                    "Class": cls_name,
+                                    "Confidence": f"{conf:.2%}",
+                                    "Bounding Box [xmin, ymin, xmax, ymax]": f"[{xmin}, {ymin}, {xmax}, {ymax}]"
+                                })
 
-                        cls_name = CLASS_NAMES.get(cls_id, f"Class_{cls_id}")
-                        color = CLASS_COLORS.get(cls_id, (255, 255, 255))
+                                # Draw bounding box rectangle
+                                cv2.rectangle(annotated_bgr, (xmin, ymin), (xmax, ymax), color, 2)
 
-                        detections.append({
-                            "Class": cls_name,
-                            "Confidence": f"{conf:.2%}",
-                            "Bounding Box [xmin, ymin, xmax, ymax]": f"[{xmin}, {ymin}, {xmax}, {ymax}]"
-                        })
+                                # Draw text label banner
+                                label = f"{cls_name} {conf:.2f}"
+                                (label_w, label_h), baseline = cv2.getTextSize(
+                                    label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
+                                )
+                                cv2.rectangle(
+                                    annotated_bgr,
+                                    (xmin, max(ymin - label_h - 10, 0)),
+                                    (xmin + label_w + 5, max(ymin, label_h + 10)),
+                                    color,
+                                    -1
+                                )
+                                cv2.putText(
+                                    annotated_bgr,
+                                    label,
+                                    (xmin + 2, max(ymin - 5, label_h + 2)),
+                                    cv2.FONT_HERSHEY_SIMPLEX,
+                                    0.5,
+                                    (255, 255, 255) if color != (0, 255, 0) else (0, 0, 0),
+                                    1,
+                                    cv2.LINE_AA
+                                )
 
-                        # Draw bounding box rectangle
-                        cv2.rectangle(annotated_bgr, (xmin, ymin), (xmax, ymax), color, 2)
+                            annotated_rgb = cv2.cvtColor(annotated_bgr, cv2.COLOR_BGR2RGB)
+                            st.session_state["annotated_image"] = annotated_rgb
+                            st.session_state["last_detections"] = detections
+                except Exception as e:
+                    st.error(f"Error running inference: {e}")
 
-                        # Draw text label banner
-                        label = f"{cls_name} {conf:.2f}"
-                        (label_w, label_h), baseline = cv2.getTextSize(
-                            label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
-                        )
-                        cv2.rectangle(
-                            annotated_bgr,
-                            (xmin, max(ymin - label_h - 10, 0)),
-                            (xmin + label_w + 5, max(ymin, label_h + 10)),
-                            color,
-                            -1
-                        )
-                        cv2.putText(
-                            annotated_bgr,
-                            label,
-                            (xmin + 2, max(ymin - 5, label_h + 2)),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            0.5,
-                            (255, 255, 255) if color != (0, 255, 0) else (0, 0, 0),
-                            1,
-                            cv2.LINE_AA
-                        )
-
-                    annotated_rgb = cv2.cvtColor(annotated_bgr, cv2.COLOR_BGR2RGB)
-                    st.image(annotated_rgb, use_container_width=True)
-
-                    st.session_state["last_detections"] = detections
-            else:
+            # Display annotated output image if available
+            if st.session_state.get("annotated_image") is not None:
+                st.markdown("### 🔍 Annotated Detection Result")
+                st.image(st.session_state["annotated_image"], use_container_width=True)
+            elif not run_btn:
                 st.info("Click **🚀 Run Detection** to perform inference on the uploaded image.")
 
-        # Show Detection Summary Table if detection was run
-        if "last_detections" in st.session_state and run_btn:
+        # Show Detection Summary Table if detection results exist in session state
+        if st.session_state.get("last_detections") is not None:
             st.markdown("---")
             st.subheader("📊 Detection Summary Table")
             detections_list = st.session_state["last_detections"]
@@ -201,3 +222,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
