@@ -33,7 +33,7 @@ CLASS_COLORS = {
 
 
 def load_model(weights_path: Path):
-    """Load trained YOLOv5 PyTorch model.
+    """Load trained YOLOv5 PyTorch model with offline local repository support.
 
     Args:
         weights_path: Path to best.pt weights file.
@@ -45,20 +45,41 @@ def load_model(weights_path: Path):
         FileNotFoundError: If weights file does not exist.
     """
     weights_path = Path(weights_path)
+    print(f"[MODEL_LOAD] Checking weights file at: {weights_path}")
     if not weights_path.is_file():
         raise FileNotFoundError(
             f"Model weights not found at: {weights_path}\n"
             "Please train the model using Google Colab and place 'best.pt' in the model/ directory."
         )
 
-    print(f"Loading YOLOv5 model from: {weights_path}")
-    model = torch.hub.load(
-        'ultralytics/yolov5',
-        'custom',
-        path=str(weights_path),
-        trust_repo=True,
-        force_reload=False
-    )
+    yolov5_dir = PROJECT_ROOT / "yolov5"
+    model = None
+
+    if yolov5_dir.is_dir() and (yolov5_dir / "hubconf.py").is_file():
+        try:
+            print(f"[MODEL_LOAD] Loading YOLOv5 model from local repository: {yolov5_dir}")
+            model = torch.hub.load(
+                str(yolov5_dir),
+                'custom',
+                path=str(weights_path),
+                source='local',
+                trust_repo=True
+            )
+            print("[MODEL_LOAD] Local offline model load successful!")
+        except Exception as e:
+            print(f"[MODEL_LOAD] Local model load failed ({e}), falling back to hub...")
+
+    if model is None:
+        print(f"[MODEL_LOAD] Loading YOLOv5 model via torch.hub...")
+        model = torch.hub.load(
+            'ultralytics/yolov5',
+            'custom',
+            path=str(weights_path),
+            trust_repo=True,
+            force_reload=False
+        )
+
+    model.eval()
     return model
 
 

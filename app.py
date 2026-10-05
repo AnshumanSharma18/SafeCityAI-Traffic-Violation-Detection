@@ -24,6 +24,7 @@ if sys.platform == "win32":
 # Define project paths
 PROJECT_ROOT = Path(__file__).resolve().parent
 WEIGHTS_PATH = PROJECT_ROOT / "model" / "best.pt"
+YOLOV5_DIR = PROJECT_ROOT / "yolov5"
 
 # Class ID mapping matching trained model and Roboflow dataset
 CLASS_NAMES = {0: "Helmet", 1: "LicensePlate", 2: "NoHelmet"}
@@ -44,17 +45,51 @@ st.set_page_config(
 
 @st.cache_resource
 def load_yolo_model():
-    """Load PyTorch YOLOv5 model weights with resource caching."""
+    """Load PyTorch YOLOv5 model weights with resource caching and offline local fallback."""
+    print(f"[MODEL_LOAD] [1/4] Checking weights file at: {WEIGHTS_PATH}")
     if not WEIGHTS_PATH.is_file():
+        print(f"[MODEL_LOAD] [ERROR] Weights file missing at {WEIGHTS_PATH}")
         return None
-    model = torch.hub.load(
-        'ultralytics/yolov5',
-        'custom',
-        path=str(WEIGHTS_PATH),
-        trust_repo=True,
-        force_reload=False
-    )
-    model.eval()
+
+    print(f"[MODEL_LOAD] [2/4] Checking local YOLOv5 directory at: {YOLOV5_DIR}")
+    model = None
+
+    print(f"[MODEL_LOAD] [3/4] Loading YOLOv5 model into PyTorch...")
+    # Attempt offline load from bundled yolov5 directory first
+    if YOLOV5_DIR.is_dir() and (YOLOV5_DIR / "hubconf.py").is_file():
+        try:
+            print(f"[MODEL_LOAD] Attempting offline load using local repository: {YOLOV5_DIR}...")
+            model = torch.hub.load(
+                str(YOLOV5_DIR),
+                'custom',
+                path=str(WEIGHTS_PATH),
+                source='local',
+                trust_repo=True
+            )
+            print("[MODEL_LOAD] Offline model loading from local repo SUCCESSFUL!")
+        except Exception as e:
+            print(f"[MODEL_LOAD] Local offline load failed ({e}), falling back to hub...")
+
+    # Fallback to online torch.hub load if local fails
+    if model is None:
+        try:
+            print("[MODEL_LOAD] Attempting torch.hub remote load (ultralytics/yolov5)...")
+            model = torch.hub.load(
+                'ultralytics/yolov5',
+                'custom',
+                path=str(WEIGHTS_PATH),
+                trust_repo=True,
+                force_reload=False
+            )
+            print("[MODEL_LOAD] Remote hub load SUCCESSFUL!")
+        except Exception as e:
+            print(f"[MODEL_LOAD] [ERROR] All model loading attempts failed: {e}")
+            raise e
+
+    if model is not None:
+        model.eval()
+        print(f"[MODEL_LOAD] [4/4] Model ready for inference. Type: {type(model)}")
+
     return model
 
 
@@ -133,7 +168,7 @@ def main():
 
             if run_btn:
                 try:
-                    with st.spinner("Running YOLOv5 traffic detection..."):
+                    with st.spinner("Loading model & running YOLOv5 traffic detection..."):
                         model = load_yolo_model()
                         if model is None:
                             st.error("Model weights `model/best.pt` missing or failed to load.")
@@ -222,4 +257,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 

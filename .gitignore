@@ -17,7 +17,7 @@ env/
 
 # Training Runs & Dataset Cache
 runs/
-yolov5/
+# yolov5/ (bundled for offline deployment)
 dataset/images/
 dataset/labels/
 dataset/roboflow_dataset/

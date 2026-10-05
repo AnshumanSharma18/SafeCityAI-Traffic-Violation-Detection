@@ -41,12 +41,30 @@ model = None
 
 
 def get_model():
-    """Lazy-load model instance if weights file exists."""
+    """Lazy-load model instance with offline local repository support if weights file exists."""
     global model
     if model is None:
         if not WEIGHTS_PATH.is_file():
             return None
+        yolov5_dir = PROJECT_ROOT / "yolov5"
+        if yolov5_dir.is_dir() and (yolov5_dir / "hubconf.py").is_file():
+            try:
+                print(f"[API_MODEL_LOAD] Loading YOLOv5 model from local repo: {yolov5_dir}")
+                model = torch.hub.load(
+                    str(yolov5_dir),
+                    'custom',
+                    path=str(WEIGHTS_PATH),
+                    source='local',
+                    trust_repo=True
+                )
+                model.eval()
+                print("[API_MODEL_LOAD] Local offline model load successful!")
+                return model
+            except Exception as e:
+                print(f"[API_MODEL_LOAD] Local load failed: {e}, attempting remote fallback...")
+
         try:
+            print("[API_MODEL_LOAD] Loading model via remote torch.hub...")
             model = torch.hub.load(
                 'ultralytics/yolov5',
                 'custom',
@@ -55,8 +73,9 @@ def get_model():
                 force_reload=False
             )
             model.eval()
+            print("[API_MODEL_LOAD] Remote hub load successful!")
         except Exception as e:
-            print(f"Error loading model weights: {e}")
+            print(f"[API_MODEL_LOAD] Error loading model weights: {e}")
             return None
     return model
 
